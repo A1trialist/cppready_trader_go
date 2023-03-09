@@ -22,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <time.h>
 
 #include <boost/asio/io_context.hpp>
 
@@ -100,8 +101,34 @@ private:
     unsigned long mBidId = 0;
     unsigned long mBidPrice = 0;
     signed long mPosition = 0;
+    signed long mFutPosition = 0;
     std::unordered_set<unsigned long> mAsks;
     std::unordered_set<unsigned long> mBids;
+
+    std::unordered_set<unsigned long> mHedgeAsks;
+    std::unordered_set<unsigned long> mHedgeBids;
+    
+    signed long mActiveOrders = 0;
+    signed long mActiveVolume = 0;
+    signed long mActiveAsk = 0;
+    signed long mActiveBid = 0;
+    
+    signed long mETFProfit = 0;
+    signed long mFutProfit = 0;
+    signed long mETFMid = 0;
+    signed long mFutMid = 0;
+
+    signed long mHedgeBidId = 0;
+    signed long mHedgeAskId = 0;
+
+    signed long mAskVolume = 0;
+    signed long mBidVolume = 0;
+
+    bool mETFOrder = false;
+    bool mFutOrder = false;
+    signed long mLstFut = clock ();
+
+    signed long mOrderIds = 0;
 };
 
 #endif //CPPREADY_TRADER_GO_AUTOTRADER_H

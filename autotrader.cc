@@ -27,17 +27,17 @@ using namespace ReadyTraderGo;
 
 RTG_INLINE_GLOBAL_LOGGER_WITH_CHANNEL(LG_AT, "AUTO")
 
-constexpr int LOT_SIZE = 10;
-constexpr int POSITION_LIMIT = 100;
+constexpr signed long int LOT_SIZE = 10;
+constexpr signed long int POSITION_LIMIT = 100;
 
-constexpr int ACTIVE_ORDERS_LIMIT = 10;
-constexpr int ACTIVE_VOLUME_LIMIT = 200;
-constexpr int ORDER_OFFSETS[] = {100, 200, 300};
-constexpr int ORDER_SHARE[] = {3, 2, 6};
+constexpr signed long int ACTIVE_ORDERS_LIMIT = 10;
+constexpr signed long int ACTIVE_VOLUME_LIMIT = 200;
+constexpr signed long int ORDER_OFFSETS[] = {100, 200, 300};
+constexpr signed long int ORDER_SHARE[] = {3, 2, 6};
 
-constexpr int TICK_SIZE_IN_CENTS = 100;
-constexpr int MIN_BID_NEARST_TICK = (MINIMUM_BID + TICK_SIZE_IN_CENTS) / TICK_SIZE_IN_CENTS * TICK_SIZE_IN_CENTS;
-constexpr int MAX_ASK_NEAREST_TICK = MAXIMUM_ASK / TICK_SIZE_IN_CENTS * TICK_SIZE_IN_CENTS;
+constexpr signed long int TICK_SIZE_IN_CENTS = 100;
+constexpr signed long int MIN_BId_NEARST_TICK = (MINIMUM_BID + TICK_SIZE_IN_CENTS) / TICK_SIZE_IN_CENTS * TICK_SIZE_IN_CENTS;
+constexpr signed long int MAX_ASK_NEAREST_TICK = MAXIMUM_ASK / TICK_SIZE_IN_CENTS * TICK_SIZE_IN_CENTS;
 
 AutoTrader::AutoTrader(boost::asio::io_context& context) : BaseAutoTrader(context)
 {
@@ -65,6 +65,15 @@ void AutoTrader::HedgeFilledMessageHandler(unsigned long clientOrderId,
 {
     RLOG(LG_AT, LogLevel::LL_INFO) << "hedge order " << clientOrderId << " filled for " << volume
                                    << " lots at $" << price << " average price in cents";
+    
+    if (mHedgeBids.find (clientOrderId) != mHedgeBids.end ()) {
+        mFutPosition += volume;
+        mFutProfit -= volume * price;
+    } else if (mHedgeAsks.find (clientOrderId) != mHedgeAsks.end ()) {
+        mFutPosition -= volume;
+        mFutProfit += volume * price;
+    }
+
 }
 
 void AutoTrader::OrderBookMessageHandler(Instrument instrument,
@@ -80,6 +89,7 @@ void AutoTrader::OrderBookMessageHandler(Instrument instrument,
                                    << "; bid prices: " << bidPrices[0]
                                    << "; bid volumes: " << bidVolumes[0];
 
+    /*
     if (instrument == Instrument::FUTURE)
     {
         unsigned long priceAdjustment = - (mPosition / LOT_SIZE) * TICK_SIZE_IN_CENTS;
@@ -111,7 +121,8 @@ void AutoTrader::OrderBookMessageHandler(Instrument instrument,
             SendInsertOrder(mBidId, Side::BUY, newBidPrice, LOT_SIZE, Lifespan::GOOD_FOR_DAY);
             mBids.emplace(mBidId);
         }
-    }
+    } 
+    */
 }
 
 void AutoTrader::OrderFilledMessageHandler(unsigned long clientOrderId,
@@ -123,12 +134,34 @@ void AutoTrader::OrderFilledMessageHandler(unsigned long clientOrderId,
     if (mAsks.count(clientOrderId) == 1)
     {
         mPosition -= (long)volume;
-        SendHedgeOrder(mNextMessageId++, Side::BUY, MAX_ASK_NEAREST_TICK, volume);
+        /*
+            self.hedge_bid_id = next(self.order_ids)
+            self.send_hedge_order(self.hedge_bid_id, Side.BId, MAX_ASK_NEAREST_TICK, volume)
+            self.hedge_bids.add(self.hedge_bid_id)
+
+            self.etf_profit += volume * price
+        */
+        mHedgeBidId = mNextMessageId++;
+        SendHedgeOrder(mHedgeBidId, Side::BUY, MAX_ASK_NEAREST_TICK, volume);
+        mHedgeBids.insert (mHedgeBidId);
+        
+        mETFProfit += volume * price;
     }
     else if (mBids.count(clientOrderId) == 1)
     {
         mPosition += (long)volume;
-        SendHedgeOrder(mNextMessageId++, Side::SELL, MIN_BID_NEARST_TICK, volume);
+        /*
+            self.hedge_ask_id = next(self.order_ids)
+            self.send_hedge_order(self.hedge_ask_id, Side.ASK, MIN_BId_NEAREST_TICK, volume)
+            self.hedge_asks.add(self.hedge_ask_id)
+
+            self.etf_profit -= volume * price
+        */
+        mHedgeAskId = mNextMessageId++;
+        SendHedgeOrder(mHedgeAskId, Side::SELL, MIN_BId_NEARST_TICK, volume);
+        mHedgeAsks.insert (mHedgeAskId);
+        
+        mETFProfit -= volume * price;
     }
 }
 
@@ -139,6 +172,7 @@ void AutoTrader::OrderStatusMessageHandler(unsigned long clientOrderId,
 {
     if (remainingVolume == 0)
     {
+        /*
         if (clientOrderId == mAskId)
         {
             mAskId = 0;
@@ -147,10 +181,38 @@ void AutoTrader::OrderStatusMessageHandler(unsigned long clientOrderId,
         {
             mBidId = 0;
         }
+        */
 
-        mAsks.erase(clientOrderId);
-        mBids.erase(clientOrderId);
+        /*
+
+        if client_order_id in self.bids:
+            self.bids.discard(client_order_id)
+            self.active_bid -= fill_volume
+        elif client_order_id in self.asks:
+            self.asks.discard(client_order_id)
+            self.active_ask -= fill_volume
+        self.active_orders -= 1
+        self.active_volume -= fill_volume
+
+        print(f"etf_profit={self.etf_profit + self.position * self.etf_mid} fut_profit={self.future_profit + self.fut_position * self.fut_mid}")
+
+        */
+        if (mBids.count (clientOrderId) == 1) {
+            mBids.erase (clientOrderId);
+            mActiveBid -= fillVolume;
+        } else if (mAsks.count (clientOrderId) == 1) {
+            mAsks.erase (clientOrderId);
+            mActiveAsk -= fillVolume;
+        }
+        mActiveOrders -= 1;
+        mActiveVolume -= fillVolume;
+
+        printf ("etf_profit=%ld fut_profit=%ld\n", 
+            mETFProfit + mPosition * mETFMid,
+            mFutProfit + mFutPosition * mFutMid
+        );
     }
+
 }
 
 void AutoTrader::TradeTicksMessageHandler(Instrument instrument,
@@ -165,4 +227,72 @@ void AutoTrader::TradeTicksMessageHandler(Instrument instrument,
                                    << "; ask volumes: " << askVolumes[0]
                                    << "; bid prices: " << bidPrices[0]
                                    << "; bid volumes: " << bidVolumes[0];
+    if (instrument == Instrument::FUTURE) {
+        mFutOrder = false;
+        if (bidPrices[0] == 0 && askPrices[0] == 0) {
+            return;
+        } else if (bidPrices[0] == 0) {
+            mFutMid = askPrices[0];
+        } else if (askPrices[0] == 0) {
+            mFutMid = bidPrices[0];
+        } else {
+            mFutMid = (bidPrices[0] + askPrices[0]) / 200 * 100;
+        }
+        // # if time.time() - self.lst_fut > 30.0:
+        // #     if self.position + self.fut_position > 0:
+        // #         self.hedge_ask_id = next(self.order_ids)
+        // #         self.send_hedge_order(self.hedge_ask_id, Side.ASK, MIN_BId_NEAREST_TICK, (self.position + self.fut_position))
+        // #         self.hedge_asks.add(self.hedge_ask_id)
+
+        // #     elif self.position + self.fut_position < 0:
+        // #         self.hedge_bid_id = next(self.order_ids)
+        // #         self.send_hedge_order(self.hedge_bid_id, Side.BId, MAX_ASK_NEAREST_TICK, -(self.position + self.fut_position))
+        // #         self.hedge_bids.add(self.hedge_bid_id)
+        // #     self.lst_fut = time.time()
+    } else if (instrument == Instrument::ETF) {
+        if (bidPrices[0] == 0 && askPrices[0] == 0) {
+            return;
+        } else if (bidPrices[0] == 0) {
+            mETFMid = askPrices[0];
+        } else if (askPrices[0] == 0) {
+            mETFMid = bidPrices[0];
+        } else {
+            mETFMid = (bidPrices[0] + askPrices[0]) / 200 * 100;
+        }
+
+        if (mFutOrder == true) {
+            mFutOrder = false;
+            printf ("etf_mid: %ld\n, fut_mid: %ld\n", mETFMid, mFutMid);
+            if (mETFMid < mFutMid + 300) {
+                signed long available = std::min(60L, std::min(mPosition - mActiveAsk + POSITION_LIMIT, ACTIVE_VOLUME_LIMIT - mAskVolume));
+                for (int i = 0;i < 3;i++) {
+                    if (mActiveOrders < ACTIVE_ORDERS_LIMIT) {
+                        signed long volume = available / ORDER_SHARE[i];
+                        if (volume <= 0) continue;
+                        mAskId = mOrderIds++;
+                        SendInsertOrder (mAskId, Side::SELL, mETFMid + ORDER_OFFSETS[i], volume, Lifespan::GOOD_FOR_DAY);
+                        mAsks.insert (mAskId);
+                        mActiveVolume += volume;
+                        mActiveOrders += 1;
+                        mActiveAsk += volume;
+                    }
+                }
+            } 
+            if (mETFMid + 300 > mFutMid) {
+                signed long available = std::min(60L, std::min(-mPosition + POSITION_LIMIT - mActiveBid, ACTIVE_VOLUME_LIMIT - mActiveVolume));
+                for (int i = 0;i < 3;i++) {
+                    if (mActiveOrders < ACTIVE_ORDERS_LIMIT) {
+                        signed long volume = available / ORDER_SHARE[i];
+                        if (volume <= 0) continue;
+                        mBidId = mOrderIds++;
+                        SendInsertOrder (mBidId, Side::BUY, mETFMid + 100 - ORDER_OFFSETS[i], volume, Lifespan::GOOD_FOR_DAY);
+                        mBids.insert (mBidId);
+                        mActiveVolume += volume;
+                        mActiveOrders += 1;
+                        mActiveBid += volume;
+                    }
+                }
+            }
+        }
+    }
 }
